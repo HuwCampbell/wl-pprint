@@ -6,8 +6,6 @@ import Text.PrettyPrint.Leijen
 
 %default total
 
---%access private
-
 data SExpr = Symbol String
            | Cons SExpr SExpr
            | Nil

@@ -1,7 +1,9 @@
 ||| An Idris port of the Wadler-Leijen pretty-printer.
 module Text.PrettyPrint.Leijen
 
-%access public
+import Data.List
+import Data.Stream
+
 %default total
 
 ||| Zip a Stream and a List together.
@@ -15,11 +17,12 @@ zipWithStreamL f (x :: xs) (y :: ys) = f x y :: zipWithStreamL f xs ys
 |||
 ||| @ n how many spaces to use
 private
-spaces : (n : Int) -> String
-spaces n = if n <= 0 then "" else pack (replicate (cast n) ' ')
+spaces : (n : Nat) -> String
+spaces Z = ""
+spaces n = pack (replicate n ' ')
 
 private
-indentation : Int -> String
+indentation : Nat -> String
 indentation n = spaces n
 
 
@@ -40,7 +43,8 @@ infixr 6 |+|, |++|
 |||     hello
 |||     world
 |||
-abstract data Doc : Type where
+export
+data Doc : Type where
   Empty : Doc
 
   ||| A single character document with the invariant that the
@@ -49,7 +53,7 @@ abstract data Doc : Type where
 
   ||| A document containing a string (plus its length). Invariant:
   ||| the string doesn't contain a newline.
-  Text : Int -> String -> Doc
+  Text : Nat -> String -> Doc
 
   ||| A newline document.
   |||
@@ -69,26 +73,28 @@ abstract data Doc : Type where
   ||| @ d2 the document with the shorter first lines
   Union : (d1, d2 : Doc) -> Doc
 
-  Column  : (Int -> Doc) -> Doc
+  Column  : (Nat -> Doc) -> Doc
   Nesting : (Int -> Doc) -> Doc
 
 
 ||| The data type `SimpleDoc` represents rendered documents and is
 ||| used by the display functions.
 |||
-||| The `Int` in `SText` contains the length of the string. The `Int`
+||| The `Nat` in `SText` contains the length of the string. The `Nat`
 ||| in `SLine` contains the indentation for that line. The library
 ||| provides two default display functions 'displayS' and
 ||| 'displayIO'. You can provide your own display function by writing a
 ||| function from a `SimpleDoc` to your own output format.
+public export
 data SimpleDoc  = SEmpty
                 | SChar Char SimpleDoc
-                | SText Int String SimpleDoc
-                | SLine Int SimpleDoc
+                | SText Nat String SimpleDoc
+                | SLine Nat SimpleDoc
 
-||| List of indentation/document pairs; saves an indirection over `List (Int,Doc)`
+||| List of indentation/document pairs; saves an indirection over `List (Nat,Doc)`
+public export
 data Docs   = Nil
-            | Cons Int Doc Docs
+            | Cons Nat Doc Docs
 
 -----------------------------------------------------------
 -- Primitives
@@ -97,6 +103,7 @@ data Docs   = Nil
 ||| The empty document is, indeed, empty. Although `empty` has no
 ||| content, it does have a 'height' of 1 and behaves exactly like
 ||| `(text "")` (and is therefore not a unit of `|$|`).
+public export
 empty : Doc
 empty           = Empty
 
@@ -104,12 +111,14 @@ empty           = Empty
 ||| The `line` document advances to the next line and indents to the
 ||| current nesting level. Document `line` behaves like `(text " ")`
 ||| if the line break is undone by 'group'.
+public export
 line : Doc
 line            = Line False
 
 ||| The document `(char c)` contains the literal character `c`. The
 ||| character shouldn't be a newline (`'\n'`), the function 'line'
 ||| should be used for line breaks.
+public export
 char : Char -> Doc
 char '\n'       = line
 char c          = Char' c
@@ -118,18 +127,21 @@ char c          = Char' c
 ||| string shouldn't contain any newline (`'\n'`) characters. If the
 ||| string contains newline characters, the function 'string' should be
 ||| used.
+public export
 text : String -> Doc
 text ""         = Empty
-text s          = Text (cast (length s)) s
+text s          = Text (length s) s
 
 
 ||| The `linebreak` document advances to the next line and indents to
 ||| the current nesting level. Document `linebreak` behaves like
 ||| 'empty' if the line break is undone by 'group'.
+public export
 linebreak : Doc
 linebreak       = Line True
 
 ||| Horizontal concatenation of documents
+public export
 beside : Doc -> Doc -> Doc
 beside x y      = Cat x y
 
@@ -146,12 +158,15 @@ beside x y      = Cat x y
 |||   world
 ||| !
 ||| `
+public export
 nest : Int -> Doc -> Doc
 nest i x        = Nest i x
 
-column : (Int -> Doc) -> Doc
+public export
+column : (Nat -> Doc) -> Doc
 column f        = Column f
 
+public export
 nesting : (Int -> Doc) -> Doc
 nesting f       = Nesting f
 
@@ -160,6 +175,7 @@ nesting f       = Nesting f
 ||| document `x`. The resulting line is added to the current line if
 ||| that fits the page. Otherwise, the document `x` is rendered without
 ||| any changes.
+public export
 group : Doc -> Doc
 group x         = Union (flatten x) x
   where flatten : Doc -> Doc
@@ -167,8 +183,8 @@ group x         = Union (flatten x) x
         flatten (Nest i x)      = Nest i (flatten x)
         flatten (Line break)    = if break then Empty else Text 1 " "
         flatten (Union x _)     = flatten x
-        flatten (Column f)      = Column (flatten . f)
-        flatten (Nesting f)     = Nesting (flatten . f)
+        flatten (Column f)      = Column (\n => flatten (f n))
+        flatten (Nesting f)     = Nesting (\n => flatten (f n))
         flatten other           = other                     --Empty,Char,Text
 
 
@@ -204,9 +220,10 @@ group x         = Union (flatten x) x
 ||| hi nice
 |||    world
 ||| `
+public export
 align : Doc -> Doc
 align d         = column (\k =>
-                  nesting (\i => nest (k - i) d))   --nesting might be negative :-)
+                  nesting (\i => nest (cast k - i) d))   --nesting might be negative :-)
 
 ||| The hang combinator implements hanging indentation. The document
 ||| `(hang i x)` renders document `x` with a nesting level set to the
@@ -227,8 +244,9 @@ align d         = column (\k =>
 ||| The `hang` combinator is implemented as:
 |||
 ||| > hang i x  = align (nest i x)
-hang : Int -> Doc -> Doc
-hang i d        = align (nest i d)
+public export
+hang : Nat -> Doc -> Doc
+hang i d        = align (nest (cast i) d)
 
 ||| The document `(indent i x)` indents document `x` with `i` spaces.
 |||
@@ -243,7 +261,8 @@ hang i d        = align (nest i d)
 |||     indents these
 |||     words !
 ||| `
-indent : Int -> Doc -> Doc
+public export
+indent : Nat -> Doc -> Doc
 indent i d      = hang i (text (spaces i) `beside` d)
 
 
@@ -253,72 +272,89 @@ indent i d      = hang i (text (spaces i) `beside` d)
 -----------------------------------------------------------
 
 ||| The document `lparen` contains a left parenthesis, "(".
+public export
 lparen : Doc
 lparen          = char '('
 
 ||| The document `rparen` contains a right parenthesis, ")".
+public export
 rparen : Doc
 rparen          = char ')'
 
 ||| The document `langle` contains a left angle, "<".
+public export
 langle : Doc
 langle          = char '<'
 
 ||| The document `rangle` contains a right angle, ">".
+public export
 rangle : Doc
 rangle          = char '>'
 
 ||| The document `lbrace` contains a left brace, "{".
+public export
 lbrace : Doc
 lbrace          = char '{'
 
 ||| The document `rbrace` contains a right brace, "}".
+public export
 rbrace : Doc
 rbrace          = char '}'
 
 ||| The document `lbracket` contains a left square bracket, "[".
+public export
 lbracket : Doc
 lbracket        = char '['
 
 ||| The document `rbracket` contains a right square bracket, "]".
+public export
 rbracket : Doc
 rbracket        = char ']'
 
 ||| The document `squote` contains a single quote, "'".
+public export
 squote : Doc
 squote          = char '\''
 
 ||| The document `dquote` contains a double quote, '"'.
+public export
 dquote : Doc
 dquote          = char '"'
 
 ||| The document `semi` contains a semi colon, ";".
+public export
 semi : Doc
 semi            = char ';'
 
 ||| The document `colon` contains a colon, ":".
+public export
 colon : Doc
 colon           = char ':'
 
 ||| The document `comma` contains a comma, ",".
+public export
 comma : Doc
 comma           = char ','
 
 ||| The document `space` contains a single space, " ".
 |||
 ||| > x |++| y   = x |+| space |+| y
+public export
 space : Doc
 space           = char ' '
 
 ||| The document `dot` contains a single dot, ".".
+public export
 dot : Doc
 dot             = char '.'
 
 ||| The document `backslash` contains a backslash, "\\".
+public export
 backslash : Doc
 backslash       = char '\\'
 
 ||| The document `equals` contains an equal sign, "=".
+public export
 equals : Doc
 equals          = char '='
 
@@ -333,6 +369,7 @@ equals          = char '='
 ||| ```
 ||| softline = group line
 ||| ```
+public export
 softline : Doc
 softline        = group line
 
@@ -342,17 +379,20 @@ softline        = group line
 ||| ```
 ||| softbreak  = group linebreak
 ||| ```
+public export
 softbreak : Doc
 softbreak       = group linebreak
 
 ||| The document `(x |+| y)` concatenates document `x` and document
 ||| `y`. It is an associative operation having 'empty' as a left and
 ||| right unit.
+public export
 (|+|) : Doc -> Doc -> Doc
 x |+| y          = x `beside` y
 
 ||| The document `(x |++| y)` concatenates document `x` and `y` with a
 ||| `space` in between.
+public export
 (|++|) : Doc -> Doc -> Doc
 x |++| y         = x |+| space |+| y
 
@@ -360,22 +400,26 @@ x |++| y         = x |+| space |+| y
 ||| 'softline' in between. This effectively puts `x` and `y` either
 ||| next to each other (with a `space` in between) or underneath each
 ||| other.
+public export
 (|/|) : Doc -> Doc -> Doc
 x |/| y         = x |+| softline |+| y
 
 ||| The document `(x |//| y)` concatenates document `x` and `y` with
 ||| a 'softbreak' in between. This effectively puts `x` and `y` either
 ||| right next to each other or underneath each other.
+public export
 (|//|) : Doc -> Doc -> Doc
 x |//| y        = x |+| softbreak |+| y
 
 ||| The document `(x |$| y)` concatenates document `x` and `y` with a
 ||| `line` in between.
+public export
 (|$|) : Doc -> Doc -> Doc
 x |$| y         = x |+| line |+| y
 
 ||| The document `(x |$$| y)` concatenates document `x` and `y` with
 ||| a `linebreak` in between.
+public export
 (|$$|) : Doc -> Doc -> Doc
 x |$$| y        = x |+| linebreak |+| y
 
@@ -383,6 +427,7 @@ x |$$| y        = x |+| linebreak |+| y
 |||
 ||| @ f how to combine the documents
 ||| @ ds the documents to combine
+public export
 fold : (f : Doc -> Doc -> Doc) -> (ds : List Doc) -> Doc
 fold _ []       = empty
 fold f (d::ds)  = f d (fold f ds)
@@ -422,6 +467,7 @@ fold f (d::ds)  = f d (fold f ds)
 |||      lay
 |||      out
 ||| ```
+public export
 vsep : List Doc -> Doc
 vsep            = fold (|$|)
 
@@ -432,6 +478,7 @@ vsep            = fold (|$|)
 ||| ```
 ||| sep xs  = group (vsep xs)
 ||| ```
+public export
 sep : List Doc -> Doc
 sep             = group . vsep
 
@@ -443,23 +490,27 @@ sep             = group . vsep
 ||| ```
 ||| fillSep xs  = foldr (|/|) empty xs
 ||| ```
+public export
 fillSep : List Doc -> Doc
 fillSep         = fold (|/|)
 
 ||| The document `(hsep xs)` concatenates all documents `xs`
 ||| horizontally with `(|++|)`.
+public export
 hsep : List Doc -> Doc
 hsep            = fold (Text.PrettyPrint.Leijen.(|++|))
 
 
 ||| The document `(hcat xs)` concatenates all documents `xs`
 ||| horizontally with `(|+|)`.
+public export
 hcat : List Doc -> Doc
 hcat            = fold (|+|)
 
 ||| The document `(vcat xs)` concatenates all documents `xs`
 ||| vertically with `(|$$|)`. If a `group` undoes the line breaks
 ||| inserted by `vcat`, all documents are directly concatenated.
+public export
 vcat : List Doc -> Doc
 vcat            = fold (|$$|)
 
@@ -470,6 +521,7 @@ vcat            = fold (|$$|)
 ||| ```
 ||| cat xs  = group (vcat xs)
 ||| ```
+public export
 cat : List Doc -> Doc
 cat             = group . vcat
 
@@ -480,6 +532,7 @@ cat             = group . vcat
 ||| ```
 ||| fillCat xs  = foldr (|//|) empty xs
 ||| ```
+public export
 fillCat : List Doc -> Doc
 fillCat         = fold (|//|)
 
@@ -489,36 +542,43 @@ fillCat         = fold (|//|)
 ||| ```
 ||| enclose l r x   = l |+| x |+| r
 ||| ```
+public export
 enclose : Doc -> Doc -> Doc -> Doc
 enclose l r x   = l |+| x |+| r
 
 ||| Document `(squotes x)` encloses document `x` with single quotes
 ||| "\'".
+public export
 squotes : Doc -> Doc
 squotes         = enclose squote squote
 
 ||| Document `(dquotes x)` encloses document `x` with double quotes
 ||| '\"'.
+public export
 dquotes : Doc -> Doc
 dquotes         = enclose dquote dquote
 
 ||| Document `(braces x)` encloses document `x` in braces, "{" and
 ||| "}".
+public export
 braces : Doc -> Doc
 braces          = enclose lbrace rbrace
 
 ||| Document `(parens x)` encloses document `x` in parenthesis, "("
 ||| and ")".
+public export
 parens : Doc -> Doc
 parens          = enclose lparen rparen
 
 ||| Document `(angles x)` encloses document `x` in angles, "<" and
 ||| ">".
+public export
 angles : Doc -> Doc
 angles          = enclose langle rangle
 
 ||| Document `(brackets x)` encloses document `x` in square brackets,
 ||| "[" and "]".
+public export
 brackets : Doc -> Doc
 brackets        = enclose lbracket rbracket
 
@@ -551,6 +611,7 @@ brackets        = enclose lbracket rbracket
 |||      ,200
 |||      ,3000]
 ||| ``
+public export
 encloseSep : Doc -> Doc -> Doc -> List Doc -> Doc
 encloseSep left right sep ds
     = case ds of
@@ -566,6 +627,7 @@ encloseSep left right sep ds
 ||| horizontally if that fits the page. Otherwise they are aligned
 ||| vertically. All comma separators are put in front of the
 ||| elements.
+public export
 list : List Doc -> Doc
 list            = encloseSep lbracket rbracket comma
 
@@ -574,6 +636,7 @@ list            = encloseSep lbracket rbracket comma
 ||| horizontally if that fits the page. Otherwise they are aligned
 ||| vertically. All comma separators are put in front of the
 ||| elements.
+public export
 tupled : List Doc -> Doc
 tupled          = encloseSep lparen   rparen  comma
 
@@ -583,6 +646,7 @@ tupled          = encloseSep lparen   rparen  comma
 ||| rendered horizontally if that fits the page. Otherwise they are
 ||| aligned vertically. All semi colons are put in front of the
 ||| elements.
+public export
 semiBraces : List Doc -> Doc
 semiBraces      = encloseSep lbrace   rbrace  semi
 
@@ -618,6 +682,7 @@ semiBraces      = encloseSep lbrace   rbrace  semi
 |||
 ||| (If you want put the commas in front of their elements instead of
 ||| at the end, you should use `tupled` or, in general, `encloseSep`.)
+public export
 punctuate : Doc -> List Doc -> List Doc
 punctuate _ []      = []
 punctuate _ [d]     = [d]
@@ -637,29 +702,33 @@ string' (c::s)    = char c |+| string' s
 ||| using `line` for newline characters and `char` for all other
 ||| characters. It is used instead of 'text' whenever the text contains
 ||| newline characters.
+public export
 string : String -> Doc
 string str = string' (unpack str)
 
+public export
 bool : Bool -> Doc
 bool b          = text (show b)
 
 ||| The document `(int i)` shows the literal integer `i` using
 ||| 'text'.
+public export
 int : Int -> Doc
 int i           = text (show i)
 
 ||| The document `(integer i)` shows the literal integer `i` using
 ||| 'text'.
+public export
 integer : Integer -> Doc
 integer i       = text (show i)
 
-||| The document `(float f)` shows the literal float `f` using
-||| 'text'.
-float : Float -> Doc
-float f         = text (show f)
+public export
+nat : Nat -> Doc
+nat n = text (show n)
 
 ||| The document `(double d)` shows the literal double `d` using
 ||| 'text'.
+public export
 double : Double -> Doc
 double d        = text (show d)
 
@@ -678,14 +747,16 @@ rational r      = text (show r)
 ||| propositional equality of the underlying Doc syntax tree, but
 ||| rather with respect to the equality of the result of rendering. So
 ||| it's "morally" a `Semigroup`.
-instance Semigroup Doc where
+public export
+Semigroup Doc where
   (<+>) = beside
 
 ||| Note that the neutral element is not a left and right unit with
 ||| respect to propositional equality of the underlying Doc syntax
 ||| tree, but rather with respect to the equality of the result of
 ||| rendering. So it's "morally" a `Monoid`.
-instance Monoid Doc where
+public export
+Monoid Doc where
   neutral = empty
 
 
@@ -693,8 +764,9 @@ instance Monoid Doc where
 -- semi primitive: fill and fillBreak
 -----------------------------------------------------------
 
-width : Doc -> (Int -> Doc) -> Doc
-width d f       = column (\k1 => d |+| column (\k2 => f (k2 - k1)))
+public export
+width : Doc -> (Nat -> Doc) -> Doc
+width d f       = column (\k1 => d |+| column (\k2 => f (minus k2 k1)))
 
 ||| The document `(fillBreak i x)` first renders document `x`. It
 ||| than appends `space`s until the width is equal to `i`. If the
@@ -714,10 +786,11 @@ width d f       = column (\k1 => d |+| column (\k2 => f (k2 - k1)))
 |||     linebreak
 |||            : Doc
 ||| `
+public export
 fillBreak : Int -> Doc -> Doc
 fillBreak f x   = width x (\w =>
-                  if (w > f) then nest f linebreak
-                             else text (spaces (f - w)))
+                  if (cast w > f) then nest f linebreak
+                                  else text "")
 
 
 ||| The document `(fill i x)` renders document `x`. It than appends
@@ -742,10 +815,11 @@ fillBreak f x   = width x (\w =>
 |||     nest   : Int -> Doc -> Doc
 |||     linebreak : Doc
 ||| `
-fill : Int -> Doc -> Doc
+public export
+fill : Nat -> Doc -> Doc
 fill f d        = width d (\w =>
                   if (w >= f) then empty
-                              else text (spaces (f - w)))
+                              else text (spaces (minus f w)))
 
 
 -----------------------------------------------------------
@@ -753,11 +827,13 @@ fill f d        = width d (\w =>
 -----------------------------------------------------------
 
 private
-fits : Int -> SimpleDoc -> Bool
-fits w SEmpty                   = if w < 0 then False else True
-fits w (SChar _ x)              = if w < 0 then False else fits (w - 1) x
-fits w (SText l _ x)            = if w < 0 then False else fits (w - l) x
-fits w (SLine _ _)              = if w < 0 then False else True
+fits : Nat -> SimpleDoc -> Bool
+fits w SEmpty                   = True
+fits Z (SChar _ x)              = False
+fits w (SChar _ x)              = fits (minus w 1) x
+fits Z (SText l _ x)            = False
+fits w (SText l _ x)            = fits (minus w l) x
+fits w (SLine _ _)              = True
 
 -----------------------------------------------------------
 -- renderPretty: the default pretty printing algorithm
@@ -770,22 +846,24 @@ fits w (SLine _ _)              = if w < 0 then False else True
 ||| amount of non-indentation characters on a line. The parameter
 ||| `ribbonfrac` should be between `0.0` and `1.0`. If it is lower or
 ||| higher, the ribbon width will be 0 or `width` respectively.
-covering
-renderPretty : Float -> Int -> Doc -> SimpleDoc
+public export
+renderPretty : Double -> Nat -> Doc -> SimpleDoc
 renderPretty rfrac w x
-    = best 0 0 (Cons 0 x Nil)
+    = assert_total $ best 0 0 (Cons 0 x Nil)
     where
      ||| the ribbon width in characters
-     r : Int
-     r  = max 0 (min w (cast (cast w * rfrac)))
+     r : Nat
+     r  = let rDouble = cast w * rfrac
+              rNat = integerToNat (cast rDouble) 
+          in max 0 (min w rNat)
 
      --nicest : r = ribbon width, w = page width,
      --          n = indentation of current line, k = current column
      --          x and y, the (simple) documents to chose from.
      --          precondition: first lines of x are longer than the first lines of y.
-     nicest : Int -> Int -> SimpleDoc -> SimpleDoc -> SimpleDoc
+     nicest : Nat -> Nat -> SimpleDoc -> SimpleDoc -> SimpleDoc
      nicest n k x y =
-       let width = min (w - k) (r - k + n) in
+       let width = min (minus w k) ((minus r k) + n) in
        if fits width x then x else y
 
 
@@ -793,7 +871,7 @@ renderPretty rfrac w x
      --         k = current column
      --        (ie. (k >= n) && (k - n == count of inserted characters)
      covering
-     best : Int -> Int -> Docs -> SimpleDoc
+     best : Nat -> Nat -> Docs -> SimpleDoc
      best _ _ Nil      = SEmpty
      best n k (Cons i d ds)
        = case d of
@@ -802,12 +880,12 @@ renderPretty rfrac w x
            Text l s    => let k' = k+l in SText l s (best n k' ds)
            Line _      => SLine i (best i i ds)
            Cat x y     => best n k (Cons i x (Cons i y ds))
-           Nest j x    => let i' = i+j in best n k (Cons i' x ds)
+           Nest j x    => let i' = integerToNat (cast (cast i + j)) in best n k (Cons i' x ds)
            Union x y   => nicest n k (best n k (Cons i x ds))
                                      (best n k (Cons i y ds))
 
            Column f    => best n k (Cons i (f k) ds)
-           Nesting f   => best n k (Cons i (f i) ds)
+           Nesting f   => best n k (Cons i (f (cast i)) ds)
 
 
 
@@ -830,7 +908,7 @@ renderCompact x
     = scan 0 [x]
     where
       covering
-      scan : Int -> List Doc -> SimpleDoc
+      scan : Nat -> List Doc -> SimpleDoc
       scan _ []     = SEmpty
       scan k (d::ds) = case d of
                         Empty       => scan k ds
@@ -854,8 +932,9 @@ renderCompact x
 ||| rendering function and transforms it to a 'ShowS' type (for use in
 ||| the 'Show' class).
 |||
-||| > showWidth : Int -> Doc -> String
+||| > showWidth : Nat -> Doc -> String
 ||| > showWidth w x   = displayS (renderPretty 0.4 w x) ""
+public export
 displayS : SimpleDoc -> String -> String
 displayS SEmpty             = id
 displayS (SChar c x)        = strCons c . displayS x
@@ -880,7 +959,8 @@ displayIO handle simpleDoc
 -----------------------------------------------------------
 -- default pretty printers: show, putDoc and hPutDoc
 -----------------------------------------------------------
-instance Show Doc where
+public export
+Show Doc where
   show doc       = displayS (renderPretty 0.4 80 doc) ""
 
 {-

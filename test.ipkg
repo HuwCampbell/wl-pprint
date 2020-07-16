@@ -1,0 +1,12 @@
+package wl-pprint-test
+
+modules = Test
+
+sourcedir = "test"
+
+depends = wlpprint
+
+main = Test
+
+executable = runtests
+

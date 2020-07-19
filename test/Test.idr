@@ -1,4 +1,4 @@
-module Text.PrettyPrint.Leijen.Test
+module Test
 
 import System
 
@@ -9,40 +9,36 @@ import Text.PrettyPrint.Leijen
 --%access private
 
 data SExpr = Symbol String
-           | Cons SExpr SExpr
+           | (::) SExpr SExpr
            | Nil
            | IntLit Int
 
 consp : SExpr -> Bool
-consp (Cons _ _) = True
+consp (_ :: _) = True
 consp _ = False
 
 mutual
   pprint : SExpr -> Doc
   pprint (Symbol str) = text str
   pprint (IntLit i)   = text (show i)
-  pprint (Cons x y)   = enclose lparen rparen (align $ listContents x y)
+  pprint (x :: y)   = enclose lparen rparen (align $ listContents x y)
   pprint Nil          = lparen |+| rparen
 
   listContents : SExpr -> SExpr -> Doc
   listContents car Nil = pprint car
   listContents car (Symbol str) = pprint car |++| dot |++| pprint (Symbol str)
   listContents car (IntLit i) = pprint car |++| dot |++| pprint (IntLit i)
-  listContents car (Cons cadr cddr) = group $ pprint car |$| listContents cadr cddr
+  listContents car (cadr :: cddr) = group $ pprint car |$| listContents cadr cddr
 
-implicit
-fromList : List SExpr -> SExpr
-fromList = foldr Cons Nil
 
-implicit
 fromString : String -> SExpr
 fromString x = Symbol x
 
 omega : SExpr
-omega = [["lambda", ["f"], ["f", "f"]], ["lambda", ["f"], ["f", "f"]]]
+omega = [[Symbol "lambda", [Symbol "f"], [Symbol "f", Symbol "f"]], [Symbol "lambda", [Symbol "f"], [Symbol "f", Symbol "f"]]]
 
 covering
-test : Int -> SimpleDoc
+test : Nat -> SimpleDoc
 test w = renderPretty 0.8 w (pprint omega)
 
 covering
@@ -67,11 +63,11 @@ doTest output expected =
     then putStrLn "ok"
     else do putStrLn $ "Expected: " ++ expected
             putStrLn $ "Got: " ++ output
-            exit 1
+            exitFailure
 
-covering
-runTest : IO ()
-runTest = traverse_ (uncurry doTest)
+public export covering
+main : IO ()
+main = traverse_ (uncurry doTest)
             [ (test1, "((lambda (f) (f f)) (lambda (f) (f f)))")
             , (test2, "((lambda (f) (f f))\n (lambda (f) (f f)))")
             , (test3, "((lambda\n  (f) (f f))\n (lambda\n  (f) (f f)))")
